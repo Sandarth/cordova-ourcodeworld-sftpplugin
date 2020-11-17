@@ -6,8 +6,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import com.jcraft.jsch.*;
 import com.jcraft.jsch.ChannelSftp.LsEntry;
+import java.util.Arrays;
 
 public class OurCodeWorldSFTP extends CordovaPlugin {
+    private static final String ACTION_CONNECT = "connect";
+    private static final String ACTION_DISCONNECT = "disconnect";
     private static final String ACTION_LIST = "list";
     private static final String ACTION_DOWNLOAD = "download";
     private static final String ACTION_RENAME = "rename";
@@ -16,445 +19,220 @@ public class OurCodeWorldSFTP extends CordovaPlugin {
     private static final String ACTION_DIR_CREATE = "dir_create";
     private static final String ACTION_DIR_DELETE = "dir_delete";
 
+    private static final String[] ACTIONS = new String[] {ACTION_CONNECT, ACTION_DISCONNECT, ACTION_LIST, ACTION_DOWNLOAD, ACTION_RENAME, ACTION_UPLOAD, ACTION_DELETE, ACTION_DIR_CREATE, ACTION_DIR_DELETE};
+
+    private JSch jsch               = new JSch();
+    private Session session         = null;
+    private ChannelSftp sftpChannel = null;
+
+    private void connect(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+            final String hostname = arg_object.getString("host");
+            final String login =  arg_object.getString("username");
+            final String password =  arg_object.getString("password");
+            final String directory =  arg_object.getString("path");
+            final String port =  arg_object.getString("port");
+
+            this.session = this.jsch.getSession(login, hostname, Integer.parseInt(port));
+
+            java.util.Properties config = new java.util.Properties();
+            config.put("StrictHostKeyChecking", "no");
+            this.session.setConfig(config);
+
+            if (!arg_object.isNull("identity")){
+                this.jsch.addIdentity(arg_object.getString("identity"));
+            }else{
+                this.session.setPassword(password);
+            }
+            
+            this.session.connect();
+            Channel channel = session.openChannel("sftp");
+            channel.connect();
+
+            this.sftpChannel = (ChannelSftp) channel;
+            callbackContext.success();
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void disconnect(CallbackContext callbackContext) {
+        try {
+            if(this.sftpChannel != null){
+                this.sftpChannel.exit();
+            }
+            this.session.disconnect();
+            callbackContext.success("Disconnect OK.");
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void ls(String directory, CallbackContext callbackContext){
+        try {
+            this.sftpChannel.cd(directory);
+
+            JSONArray contenedor = new JSONArray();
+
+            @SuppressWarnings("unchecked")
+
+            java.util.Vector<LsEntry> flLst = this.sftpChannel.ls(directory);
+
+            final int i = flLst.size();
+
+            for(int j = 0; j<i ;j++){
+                JSONObject item = new JSONObject();
+                LsEntry entry = flLst.get(j);
+                SftpATTRS attr = entry.getAttrs();
+
+                item.put("name", entry.getFilename());
+                item.put("filepath", directory + "/" + entry.getFilename());
+                item.put("isDir", attr.isDir());
+                item.put("isLink", attr.isLink());
+                item.put("size",attr.getSize());
+                item.put("permissions",attr.getPermissions());
+                item.put("permissions_string",attr.getPermissionsString());
+                item.put("longname",entry.toString());
+
+                contenedor.put(item);
+            }
+            callbackContext.success(contenedor.toString());
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void download(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.get(arg_object.getString("filesource") , arg_object.getString("filedestination"),new progressMonitor(callbackContext));
+
+            JSONObject item = new JSONObject();
+            item.put("finished", true);
+            item.put("success", true);
+
+            callbackContext.success(item.toString());
+
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void upload(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.put(arg_object.getString("filesource") , arg_object.getString("filedestination"),new progressMonitor(callbackContext));
+
+            JSONObject item = new JSONObject();
+            item.put("finished", true);
+            item.put("success", true);
+
+            callbackContext.success(item.toString());
+
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void rename(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.rename(arg_object.getString("filesource") , arg_object.getString("filedestination"));
+
+            JSONObject renamed = new JSONObject();
+            renamed.put("renamed", true);
+                            
+            callbackContext.success(renamed.toString());
+
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void delete(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.rm(arg_object.getString("remotepath"));
+
+            JSONObject deleted = new JSONObject();
+            deleted.put("deleted", true);
+                            
+            callbackContext.success(deleted.toString());
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void dirDelete(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.rmdir(arg_object.getString("remotepath"));
+
+            JSONObject deleted = new JSONObject();
+            deleted.put("deleted", true);
+                            
+            callbackContext.success(deleted.toString());
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
+    private void dirCreate(JSONArray data, CallbackContext callbackContext) { 
+        try {
+            final JSONObject arg_object = data.getJSONObject(0);
+
+            this.sftpChannel.mkdir(arg_object.getString("remotepath"));
+
+            JSONObject created = new JSONObject();
+            created.put("created", true);
+                            
+            callbackContext.success(created.toString());
+        } catch (Exception e) {
+            callbackContext.error(e.toString());
+        }
+    }
+
     @Override
     public boolean execute(String action, JSONArray data, CallbackContext callbackContext) throws JSONException {
-        final JSONObject arg_object = data.getJSONObject(0);
-        final String hostname = arg_object.getString("host");
-        final String login =  arg_object.getString("username");
-        final String password =  arg_object.getString("password");
-        final String directory =  arg_object.getString("path");
-        final String port =  arg_object.getString("port");
-        String name_known_host = "DO_NOT_USE";
-
-        if (!arg_object.isNull("known_hosts")){
-            name_known_host = arg_object.getString("known_hosts");
-        }
-        
-        final String known_hosts = name_known_host; 
         final CallbackContext callbacks = callbackContext;
 
-        if (ACTION_LIST.equals(action)) {
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
+        if (!Arrays.asList(ACTIONS).contains(action)) return false;
 
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-                        
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        JSONArray contenedor = new JSONArray();
-
-                        @SuppressWarnings("unchecked")
-
-                        java.util.Vector<LsEntry> flLst = sftp.ls(directory);
-
-                        final int i = flLst.size();
-
-                        for(int j = 0; j<i ;j++){
-                            JSONObject item = new JSONObject();
-                            LsEntry entry = flLst.get(j);
-                            SftpATTRS attr = entry.getAttrs();
-
-                            item.put("name", entry.getFilename());
-                            item.put("filepath", directory + "/" + entry.getFilename());
-                            item.put("isDir", attr.isDir());
-                            item.put("isLink", attr.isLink());
-                            item.put("size",attr.getSize());
-                            item.put("permissions",attr.getPermissions());
-                            item.put("permissions_string",attr.getPermissionsString());
-                            item.put("longname",entry.toString());
-
-                            contenedor.put(item);
-                        }
-
-                        channel.disconnect();
-                        session.disconnect();
-                        PluginResult result = new PluginResult(PluginResult.Status.OK, contenedor.toString());
-                        result.setKeepCallback(true);
-                        callbacks.sendPluginResult(result);
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                            callbacks.error(e.getMessage().toString());
-                            e.printStackTrace();
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                try {
+                    if (ACTION_CONNECT.equals(action)){
+                        connect(data, callbackContext);
+                    } else if (ACTION_DISCONNECT.equals(action)){
+                        disconnect(callbackContext);
+                    } else if (ACTION_LIST.equals(action)) {
+                        ls(data.getString(0), callbackContext);
+                    } else if(ACTION_DOWNLOAD.equals(action)){
+                        download(data, callbackContext);
+                    } else if(ACTION_UPLOAD.equals(action)){
+                        upload(data, callbackContext);
+                    } else if(ACTION_RENAME.equals(action)){
+                        rename(data, callbackContext);
+                    } else if(ACTION_DELETE.equals(action)){
+                        delete(data, callbackContext);
+                    } else if(ACTION_DIR_DELETE.equals(action)){
+                        dirDelete(data, callbackContext);
+                    } else if(ACTION_DIR_CREATE.equals(action)){
+                        dirCreate(data, callbackContext);
                     }
-                }
-            });
-
-            PluginResult pluginResult = new  PluginResult(PluginResult.Status.NO_RESULT); 
-            pluginResult.setKeepCallback(true); 
-            return true;
-            
-        }else if(ACTION_DOWNLOAD.equals(action)){
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.get(arg_object.getString("filesource") , arg_object.getString("filedestination"),new progressMonitor(callbacks));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject item = new JSONObject();
-                            item.put("finished", true);
-                            item.put("success", true);
-                            
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, item.toString());
-                            result.setKeepCallback(true);
-                            callbacks.sendPluginResult(result);
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            PluginResult pluginResult = new  PluginResult(PluginResult.Status.NO_RESULT); 
-            pluginResult.setKeepCallback(true); 
-            return true;
-        }else if(ACTION_UPLOAD.equals(action)){
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-                        
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.put(arg_object.getString("filesource") , arg_object.getString("filedestination"),new progressMonitor(callbacks));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject item = new JSONObject();
-                            item.put("finished", true);
-                            item.put("success", true);
-                            
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, item.toString());
-                            result.setKeepCallback(true);
-                            callbacks.sendPluginResult(result);
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            return true;
-        }else if(ACTION_RENAME.equals(action)){
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-                        
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.rename(arg_object.getString("filesource") , arg_object.getString("filedestination"));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject renamed = new JSONObject();
-                            renamed.put("renamed", true);
-                            
-                            callbacks.success(renamed.toString());
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            return true;
-        }else if(ACTION_DELETE.equals(action)){
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-                        
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.rm(arg_object.getString("remotepath"));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject deleted = new JSONObject();
-                            deleted.put("deleted", true);
-                            
-                            callbacks.success(deleted.toString());
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            return true;
-        }else if(ACTION_DIR_DELETE.equals(action)){
-            cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-                        
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.rmdir(arg_object.getString("remotepath"));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject deleted = new JSONObject();
-                            deleted.put("deleted", true);
-                            
-                            callbacks.success(deleted.toString());
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            return true;
-        }else if(ACTION_DIR_CREATE.equals(action)){
-             cordova.getThreadPool().execute(new Runnable() {
-                public void run() {
-                    try {
-                        JSch ssh = new JSch();
-                        Session session = ssh.getSession(login, hostname, Integer.parseInt(port));
-                        
-                        if(!known_hosts.equals("DO_NOT_USE")){
-                            ssh.setKnownHosts(known_hosts);
-                        }else{
-                            java.util.Properties config = new java.util.Properties();
-                            config.put("StrictHostKeyChecking", "no");
-                            session.setConfig(config);
-                        }
-
-                        if (!arg_object.isNull("identity")){
-                            ssh.addIdentity(arg_object.getString("identity"));
-                        }else{
-                            session.setPassword(password);
-                        }
-
-                        session.connect();
-                        Channel channel = session.openChannel("sftp");
-                        channel.connect();
-
-                        ChannelSftp sftp = (ChannelSftp) channel;
-
-                        sftp.cd(directory);
-
-                        sftp.mkdir(arg_object.getString("remotepath"));
-
-                        Boolean success = true;
-
-                        if (success){
-                            JSONObject created = new JSONObject();
-                            created.put("created", true);
-                            
-                            callbacks.success(created.toString());
-                        }
- 
-                        channel.disconnect();
-                        session.disconnect();
-                    } catch (JSchException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();  
-                    } catch (SftpException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    } catch (JSONException e) {
-                        callbacks.error(e.getMessage().toString());
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            return true;
-        }else {
-            return false;
-        }
+                    
+                } catch (Exception e) {
+                    callbacks.error(e.getMessage().toString());
+                    e.printStackTrace();  
+                } 
+            }
+        });
+        return true;
     }
 }

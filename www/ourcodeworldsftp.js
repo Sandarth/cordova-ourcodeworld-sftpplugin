@@ -3,18 +3,18 @@
 module.exports = {
   createSFTPClient: function () {
     //This variable will be private
-    var _settings = {
-      host: null,
-      username: null,
-      password: null,
-      path: '/root',
-      port: '22',
-      identity: null,
-      known_hosts: null,
-    };
 
     return {
-      setCredentials: function (host, username, password, port) {
+      connect: function (host, username, password, port, identity, success, error) {
+        var _settings = {
+          host: null,
+          username: null,
+          password: null,
+          path: '/root',
+          port: '22',
+          identity: null,
+          known_hosts: null,
+        };
         if (typeof host === 'undefined') {
           _settings.host = null;
         } else {
@@ -38,6 +38,36 @@ module.exports = {
         } else {
           _settings.port = port.toString();
         }
+
+        if (typeof identity === 'undefined'){
+          _settings.identity = null;
+        } else {
+         _settings.identity = identity; 
+        }
+
+        cordova.exec(
+          function () {
+            success();
+          },
+          function (err) {
+            error(err);
+          },
+          'OurCodeWorldSFTP',
+          'connect',
+          [_settings]
+        );
+      },
+      disconnect: function (success, error) {
+        cordova.exec(
+          function () {
+            success();
+          },
+          function (err) {
+            error(err);
+          },
+          'OurCodeWorldSFTP',
+          'disconnect'
+        );
       },
       /**
        * Set the global path of the remote connection
@@ -63,8 +93,7 @@ module.exports = {
        * @param {type} error
        * @returns {undefined}
        */
-      list: function (success, error) {
-        var datos = _settings;
+      list: function (directory, success, error) {
         cordova.exec(
           function (data) {
             success(JSON.parse(data));
@@ -74,7 +103,7 @@ module.exports = {
           },
           'OurCodeWorldSFTP',
           'list',
-          [datos]
+          [directory]
         );
       },
       /**
@@ -102,8 +131,8 @@ module.exports = {
 
         return path;
       },
-      rename: function (sourcePath, destinationPath, callbacks) {
-        var datos = _settings;
+      rename: function (sourcePath, destinationPath, success, error) {
+        var datos = {};
 
         datos.filesource = sourcePath;
         datos.filedestination = destinationPath;
@@ -111,21 +140,21 @@ module.exports = {
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
+            error(err);
           },
           'OurCodeWorldSFTP',
           'rename',
           [datos]
         );
       },
-      downloadFile: function (sourcePath, destinationPath, callbacks) {
-        var datos = _settings;
+      downloadFile: function (sourcePath, destinationPath, success, error) {
+        var datos = {};
 
         datos.filesource = sourcePath;
         datos.filedestination = destinationPath;
@@ -133,21 +162,21 @@ module.exports = {
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
+            error(err);
           },
           'OurCodeWorldSFTP',
           'download',
           [datos]
         );
       },
-      uploadFile: function (sourcePath, destinationPath, callbacks) {
-        var datos = _settings;
+      uploadFile: function (sourcePath, destinationPath, success, error) {
+        var datos = {};
 
         datos.filesource = sourcePath;
         datos.filedestination = destinationPath;
@@ -155,76 +184,75 @@ module.exports = {
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
+            error(err);
           },
           'OurCodeWorldSFTP',
           'upload',
           [datos]
         );
       },
-      removeFile: function (remotePath, callbacks) {
-        var datos = _settings;
+      removeFile: function (remotePath, success, error) {
+        var datos = {};
 
         datos.remotepath = remotePath;
 
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
+            error(err);
           },
           'OurCodeWorldSFTP',
           'delete',
           [datos]
         );
       },
-      removeFolder: function (remotePathToDelete, callbacks) {
-        var datos = _settings;
+      removeFolder: function (remotePathToDelete, success, error) {
+        var datos = {};
 
         datos.remotepath = remotePathToDelete;
 
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
+            error(err);
           },
           'OurCodeWorldSFTP',
           'dir_delete',
           [datos]
         );
       },
-      createFolder: function (remotePathToCreate, callbacks) {
-        var datos = _settings;
+      createFolder: function (remotePathToCreate, success, error) {
+        var datos = {};
 
         datos.remotepath = remotePathToCreate;
 
         cordova.exec(
           function (data) {
             try {
-              callbacks.success(JSON.parse(data));
+              success(JSON.parse(data));
             } catch (e) {
-              callbacks.error(data);
+              error(data);
             }
           },
           function (err) {
-            callbacks.error(err);
           },
           'OurCodeWorldSFTP',
           'dir_create',
